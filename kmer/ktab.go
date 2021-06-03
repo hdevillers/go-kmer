@@ -1,5 +1,10 @@
 package kmer
 
+import (
+	"bufio"
+	"errors"
+)
+
 /*
 	Basic functions to encode and decode data
 	into binary ktab.
@@ -79,21 +84,47 @@ func NewKhead(k, p, l, w int) *Khead {
 // Add a name
 func (kh *Khead) AddName(n string) {
 	kh.Names = append(kh.Names, n)
+	kh.Nlibs++
 }
 
 // Set names
 func (kh *Khead) SetNames(n []string) {
 	kh.Names = n
+	kh.Nlibs = uint16(len(n))
 }
 
 // Encode a header into bytes
-func (kh *Khead) Encode() []byte {
+func (kh *Khead) Encode(b bufio.Writer) error {
+	// Prepare the first part of the header
 	out := make([]byte, 2)
 	out[0] = kh.K
 	out[1] = kh.Param
 	out = append(out, Uint16ToBytes(kh.Nlibs)...)
 	out = append(out, Uint64ToBytes(kh.NWords)...)
-	return out
+
+	// Write it
+	nn, err := b.Write(out)
+	if nn != len(out) {
+		return errors.New("Failed to encode the header, missing bytes.")
+	}
+
+	// Write the name section
+	out = make([]byte, 0)
+	for i := 0; i < int(kh.Nlibs); i++ {
+		nam := []byte(kh.Names[i])
+		ln := len(nam)
+		if ln > 255 {
+			return errors.New("Library name is too long.")
+		}
+		out = append(out, uint8(ln))
+		out = append(out, nam...)
+	}
+	nn, err = b.Write(out)
+	if nn != len(out) {
+		return errors.New("Failed to encode the library names, missing bytes.")
+	}
+
+	return err
 }
 
 // Decode a header from bytes
@@ -106,5 +137,3 @@ func Decode(v []byte) *Khead {
 		make([]string, 0),
 	}
 }
-
-// Read/Load names
