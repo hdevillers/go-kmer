@@ -2,7 +2,6 @@ package kmer
 
 import (
 	"bufio"
-	"errors"
 )
 
 /*
@@ -94,7 +93,7 @@ func (kh *Khead) SetNames(n []string) {
 }
 
 // Encode a header into bytes
-func (kh *Khead) Encode(b bufio.Writer) error {
+func (kh *Khead) Encode(b bufio.Writer) {
 	// Prepare the first part of the header
 	out := make([]byte, 2)
 	out[0] = kh.K
@@ -105,7 +104,7 @@ func (kh *Khead) Encode(b bufio.Writer) error {
 	// Write it
 	nn, err := b.Write(out)
 	if nn != len(out) {
-		return errors.New("Failed to encode the header, missing bytes.")
+		panic("Failed to encode the header, missing bytes.")
 	}
 
 	// Write the name section
@@ -114,26 +113,54 @@ func (kh *Khead) Encode(b bufio.Writer) error {
 		nam := []byte(kh.Names[i])
 		ln := len(nam)
 		if ln > 255 {
-			return errors.New("Library name is too long.")
+			panic("Library name is too long.")
 		}
 		out = append(out, uint8(ln))
 		out = append(out, nam...)
 	}
 	nn, err = b.Write(out)
 	if nn != len(out) {
-		return errors.New("Failed to encode the library names, missing bytes.")
+		panic("Failed to encode the library names, missing bytes.")
 	}
-
-	return err
+	if err != nil {
+		panic(err)
+	}
 }
 
 // Decode a header from bytes
-func Decode(v []byte) *Khead {
-	return &Khead{
-		v[0],
-		v[1],
-		BytesToUint16(v[2:5]),
-		BytesToUint64(v[6:11]),
-		make([]string, 0),
+func Decode(b bufio.Reader) *Khead {
+	v := make([]byte, 12)
+	n, err := b.Read(v)
+	if err != nil {
+		panic(err)
 	}
+	if n != 12 {
+		panic("The header length is not correct.")
+	}
+
+	var kh Khead
+	kh.K = v[0]
+	kh.Param = v[1]
+	nlibs := BytesToUint16(v[2:5])
+	kh.NWords = BytesToUint64(v[6:11])
+	kh.Names = make([]string, 0)
+
+	// Load names
+	for i := 0; i < int(nlibs); i++ {
+		ln, err := b.ReadByte()
+		if err != nil {
+			panic(err)
+		}
+		nam := make([]byte, int(ln))
+		n, err = b.Read(nam)
+		if err != nil {
+			panic(err)
+		}
+		if n != 12 {
+			panic("Name length is not correct.")
+		}
+		kh.AddName(string(nam))
+	}
+
+	return &kh
 }
